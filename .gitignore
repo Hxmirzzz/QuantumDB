@@ -1,0 +1,336 @@
+# =============================================================================
+# ARCHIVOS SENSIBLES - NUNCA SUBIR A GIT
+# =============================================================================
+
+# Variables de entorno con credenciales
+.env
+.env.local
+.env.production
+.env.staging
+
+# Archivos de configuración con datos sensibles
+config.json
+
+# Archivos de backup (contienen datos de bases de datos)
+backups/
+*.sql
+*.bak
+*.dump
+*.sql.gz
+*.bak.gz
+
+# Logs del sistema (pueden contener información sensible)
+logs/
+*.log
+
+
+# =============================================================================
+# PYTHON
+# =============================================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+
+# =============================================================================
+# IDEs y EDITORES
+# =============================================================================
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+*~
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Atom
+.atom/
+
+
+# =============================================================================
+# SISTEMA OPERATIVO
+# =============================================================================
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+
+# =============================================================================
+# BASES DE DATOS
+# =============================================================================
+
+# Archivos de bases de datos locales
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# MySQL
+*.sql
+*.mysql
+
+# PostgreSQL
+*.pgsql
+*.psql
+
+# SQL Server
+*.mdf
+*.ldf
+*.ndf
+
+
+# =============================================================================
+# ARCHIVOS TEMPORALES Y CACHE
+# =============================================================================
+
+# Archivos temporales
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.backup
+*.old
+
+# Directorios temporales
+tmp/
+temp/
+cache/
+
+# npm (si se usa Node.js para algo)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+
+# =============================================================================
+# ARCHIVOS ESPECÍFICOS DEL PROYECTO
+# =============================================================================
+
+# Archivos de prueba/desarrollo
+test_backup.sql
+*.test.sql
+sandbox/
+playground/
+
+# Documentación temporal
+docs/_build/
+
+# Configuraciones locales de desarrollo
+local_config.json
+dev_config.json
+*.local.json
+
+# Datos de prueba
+test_data/
+sample_data/
+
+
+# =============================================================================
+# COMPILACIÓN Y BUILD
+# =============================================================================
+
+# Archivos compilados
+*.pyc
+*.pyo
+*.class
+*.o
+*.obj
+
+# Archivos de compilación
+*.exe
+*.out
+*.app
+
+
+# =============================================================================
+# SEGURIDAD
+# =============================================================================
+
+# Claves privadas y certificados
+*.key
+*.pem
+*.crt
+*.cer
+*.p12
+*.pfx
+
+# Tokens y secretos
+secrets.json
+credentials.json
+.secrets/
+
+
+# =============================================================================
+# SERVICIOS DE CI/CD Y CLOUD
+# =============================================================================
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# AWS
+.aws/
+
+
+# =============================================================================
+# MANTENER ESTRUCTURA DE DIRECTORIOS VACÍOS
+# =============================================================================
+
+# Permite commitear directorios vacíos con un .gitkeep
+!.gitkeep
+!**/.gitkeep
