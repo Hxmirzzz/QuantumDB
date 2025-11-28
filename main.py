@@ -210,7 +210,7 @@ def main():
             logger.info(f"✓ Backup exitoso: {result.output_file}")
             sys.exit(0)
         else:
-            logger.error(f"✗ Backup fallido: {result.error_message}")
+            logger.error(f"✗ Backup fallido: {result.error}")
             sys.exit(1)
     
     # Modo once (una sola ejecución)
