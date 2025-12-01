@@ -1,45 +1,27 @@
 """
-Estrategia de backup para SQL Server
+Estrategia de backup para SQL Server usando pyodbc
 Genera script SQL completo con estructura y datos
 """
-import subprocess
+import pyodbc
 from pathlib import Path
 from datetime import datetime
-import codecs
 from .base_strategy import BackupStrategy
 from ..models import DatabaseConfig, BackupResult
 
 
 class SQLServerBackupStrategy(BackupStrategy):
-    """Estrategia de backup para SQL Server"""
+    """Estrategia de backup para SQL Server usando pyodbc"""
     
     def backup(self, db_config: DatabaseConfig, output_file: Path) -> BackupResult:
         """
         Ejecuta backup de SQL Server generando script SQL completo
-        
-        Args:
-            db_config: Configuración de la base de datos
-            output_file: Archivo de salida para el backup
-            
-        Returns:
-            Resultado del backup
         """
-        # Validar herramientas
-        tool_error = self._validate_tools(['sqlcmd'])
-        if tool_error:
-            return BackupResult(
-                database_name=db_config.name,
-                success=False,
-                error=tool_error
-            )
-        
         try:
             database_name = db_config.database or db_config.name
             script_file = output_file.with_suffix('.sql')
             
             self.logger.info(f"Generando backup SQL completo de: {database_name}")
             self.logger.info(f"Archivo destino: {script_file}")
-            self.logger.info("GENERANDO: Estructura + Datos")
 
             # Validar credenciales
             if not db_config.user or not db_config.password:
@@ -53,598 +35,679 @@ class SQLServerBackupStrategy(BackupStrategy):
                 return BackupResult(
                     database_name=db_config.name,
                     success=False,
-                    error="Variables de entorno no resueltas correctamente"
+                    error="Variables de entorno no resueltas"
                 )
 
-            # Crear directorio si no existe
+            # Crear directorio
             script_file.parent.mkdir(parents=True, exist_ok=True)
 
-            # Inicializar archivo con encabezado
-            with open(script_file, 'w', encoding='utf-8-sig') as f:
-                f.write(f"-- =============================================\n")
-                f.write(f"-- BACKUP DE BASE DE DATOS: {database_name}\n")
-                f.write(f"-- Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"-- Servidor: {self._get_server_string(db_config)}\n")
-                f.write(f"-- =============================================\n\n")
-                f.write(f"USE [{database_name}];\nGO\n\n")
+            # Conectar
+            conn = self._connect(db_config, database_name)
+            if not conn:
+                return BackupResult(
+                    database_name=db_config.name,
+                    success=False,
+                    error="No se pudo conectar a SQL Server"
+                )
 
-            # Paso 1: Generar estructura
-            self.logger.info("Paso 1/2: Generando estructura de la base de datos...")
-            if not self._generate_schema(db_config, database_name, script_file):
-                return BackupResult(
-                    database_name=db_config.name,
-                    success=False,
-                    error="Error al generar estructura de la BD"
-                )
-            
-            # Paso 2: Generar datos
-            self.logger.info("Paso 2/2: Generando datos de todas las tablas...")
-            if not self._generate_data(db_config, database_name, script_file):
-                return BackupResult(
-                    database_name=db_config.name,
-                    success=False,
-                    error="Error al generar datos de la BD"
-                )
-            
-            # Verificar tamaño final
-            if script_file.exists():
+            try:
+                # Encabezado general
+                with open(script_file, 'w', encoding='utf-8') as f:
+                    f.write("-- =============================================\n")
+                    f.write(f"-- BACKUP DE BASE DE DATOS: {database_name}\n")
+                    f.write(f"-- Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"-- Servidor: {db_config.host}\n")
+                    f.write("-- =============================================\n\n")
+                    f.write("USE [{}];\nGO\n\n".format(database_name))
+
+                    f.write("-- >>>>>> SECTION: SCHEMA\n\n")
+
+                # 1. Estructura
+                self.logger.info("Paso 1/2: Generando estructura...")
+                if not self._generate_schema(conn, database_name, script_file):
+                    return BackupResult(database_name=db_config.name, success=False,
+                                       error="Error generando estructura")
+
+                # 2. Datos
+                self.logger.info("Paso 2/2: Generando datos...")
+                if not self._generate_data(conn, database_name, script_file):
+                    return BackupResult(database_name=db_config.name, success=False,
+                                       error="Error generando datos")
+
+                # DEFAULTS
+                self.logger.info("Generando defaults…")
+                self._generate_defaults(conn, script_file)
+
+                # ÍNDICES
+                self.logger.info("Generando índices…")
+                self._generate_indexes(conn, script_file)
+
+                # Stored Procedures
+                self.logger.info("Generando procedimientos almacenados…")
+                self._generate_stored_procedures(conn, script_file)
+
+                # FKs (último siempre)
+                self.logger.info("Generando Foreign Keys…")
+                self._generate_foreign_keys(conn, script_file)
+
+                # TRIGGERS
+                self.logger.info("Generando triggers…")
+                self._generate_triggers(conn, script_file)
+
+                # USERS
+                self.logger.info("Generando usuarios…")
+                self._generate_users(conn, script_file)
+
+                # ROLES Y PERMISOS
+                self.logger.info("Generando roles y permisos…")
+                self._generate_roles_and_permissions(conn, script_file)
+
+                # COMPUTED COLUMNS
+                self.logger.info("Generando columnas calculadas…")
+                self._generate_computed_columns(conn, script_file)
+                
                 file_size = script_file.stat().st_size / (1024 * 1024)
                 self.logger.info(f"✓ Backup completado: {script_file.name} ({file_size:.2f} MB)")
                 
-                return BackupResult(
-                    database_name=db_config.name,
-                    success=True,
-                    output_file=str(script_file)
-                )
-            else:
-                return BackupResult(
-                    database_name=db_config.name,
-                    success=False,
-                    error="El archivo no se generó correctamente"
-                )
+                return BackupResult(database_name=db_config.name, success=True,
+                                    output_file=str(script_file))
 
-        except subprocess.TimeoutExpired:
-            return BackupResult(
-                database_name=db_config.name,
-                success=False,
-                error="Timeout: El backup tardó más de 1 hora"
-            )
+            finally:
+                conn.close()
+
         except Exception as e:
-            self.logger.error(f"Error inesperado: {e}")
-            if 'script_file' in locals() and script_file.exists():
-                try:
-                    script_file.unlink()
-                except:
-                    pass
-            return BackupResult(
-                database_name=db_config.name,
-                success=False,
-                error=str(e)
-            )
+            self.logger.error(f"Error: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return BackupResult(database_name=db_config.name, success=False, error=str(e))
 
-    def _generate_schema(self, db_config: DatabaseConfig, database_name: str, script_file: Path) -> bool:
-        """Genera la estructura de la BD (tablas, PKs, FKs, índices)"""
-        
+
+    def _connect(self, db_config: DatabaseConfig, database_name: str):
+        """Conecta a SQL Server"""
         try:
-            with open(script_file, 'a', encoding='utf-8-sig') as f:
-                f.write("-- =============================================\n")
-                f.write("-- ESTRUCTURA DE LA BASE DE DATOS\n")
-                f.write("-- =============================================\n\n")
+            conn_str = (
+                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                f"SERVER={db_config.host};"
+                f"DATABASE={database_name};"
+                f"UID={db_config.user};"
+                f"PWD={db_config.password};"
+                f"TrustServerCertificate=yes;"
+            )
             
-            # Obtener lista de tablas
-            tables_query = """
-            SET NOCOUNT ON;
-            SELECT s.name + '.' + t.name
-            FROM sys.tables t
-            INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-            WHERE t.is_ms_shipped = 0
-            ORDER BY s.name, t.name;
-            """
+            self.logger.info(f"Conectando a: {db_config.host}")
+            conn = pyodbc.connect(conn_str, timeout=30)
+            self.logger.info("✓ Conexión establecida")
+            return conn
             
-            cmd = [
-                'sqlcmd',
-                '-S', self._get_server_string(db_config),
-                '-U', db_config.user,
-                '-P', db_config.password,
-                '-d', database_name,
-                '-Q', tables_query,
-                '-h', '-1',
-                '-W',
-                '-s', '|',
-                '-C',
-                '-f', '65001'  # UTF-8 encoding
-            ]
+        except pyodbc.Error as e:
+            self.logger.error(f"Error de conexión: {e}")
+            return None
+
+
+    # -------------------------------------------------------------------------
+    # GENERAR ESTRUCTURA
+    # -------------------------------------------------------------------------
+
+    def _generate_schema(self, conn, database_name: str, script_file: Path) -> bool:
+        """Genera estructura de la BD"""
+        try:
+            cursor = conn.cursor()
+
+            with open(script_file, 'a', encoding='utf-8') as f:
+                f.write("-- >>>>>> SECTION: SCHEMA (CREATE TABLES)\n\n")
+
+            cursor.execute("""
+                SELECT s.name, t.name
+                FROM sys.tables t
+                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                WHERE t.is_ms_shipped = 0
+                ORDER BY s.name, t.name
+            """)
             
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, encoding='utf-8')
-            
-            if result.returncode != 0:
-                self.logger.error(f"Error obteniendo tablas: {result.stderr}")
-                return False
-            
-            tables = [t.strip() for t in result.stdout.splitlines() if t.strip()]
-            
+            tables = cursor.fetchall()
             if not tables:
-                self.logger.warning("No se encontraron tablas en la base de datos")
                 return True
-            
+
             self.logger.info(f"  Exportando estructura de {len(tables)} tablas...")
-            
-            # Generar CREATE TABLE para cada tabla
-            for i, table in enumerate(tables, 1):
-                schema, table_name = table.split('.')
-                self.logger.info(f"    [{i}/{len(tables)}] {schema}.{table_name}")
-                
-                if not self._generate_table_ddl(db_config, database_name, schema, table_name, script_file):
-                    self.logger.error(f"Error generando DDL de {schema}.{table_name}")
-                    return False
-            
-            self.logger.info("  ✓ Estructura generada correctamente")
+
+            for i, (schema, table) in enumerate(tables, 1):
+                self.logger.info(f"    [{i}/{len(tables)}] {schema}.{table}")
+
+                with open(script_file, 'a', encoding='utf-8') as f:
+                    f.write(f"\n-- Tabla: [{schema}].[{table}]\n")
+                    f.write(f"IF OBJECT_ID('[{schema}].[{table}]', 'U') IS NOT NULL\n")
+                    f.write(f"    DROP TABLE [{schema}].[{table}];\nGO\n\n")
+
+                    cursor.execute(f"""
+                        SELECT 
+                            c.name,
+                            TYPE_NAME(c.user_type_id),
+                            c.max_length,
+                            c.precision,
+                            c.scale,
+                            c.is_nullable,
+                            c.is_identity
+                        FROM sys.columns c
+                        WHERE c.object_id = OBJECT_ID('[{schema}].[{table}]')
+                        ORDER BY c.column_id
+                    """)
+
+                    columns = cursor.fetchall()
+
+                    f.write(f"CREATE TABLE [{schema}].[{table}] (\n")
+
+                    for j, col in enumerate(columns):
+                        col_name, type_name, max_len, precision, scale, nullable, is_identity = col
+
+                        if type_name in ('varchar', 'char', 'varbinary', 'binary'):
+                            type_str = f"{type_name}({max_len if max_len != -1 else 'MAX'})"
+                        elif type_name in ('nvarchar', 'nchar'):
+                            type_str = f"{type_name}({max_len//2 if max_len != -1 else 'MAX'})"
+                        elif type_name in ('decimal', 'numeric'):
+                            type_str = f"{type_name}({precision},{scale})"
+                        else:
+                            type_str = type_name
+                        
+                        identity_str = " IDENTITY(1,1)" if is_identity else ""
+                        null_str = " NULL" if nullable else " NOT NULL"
+                        comma = "," if j < len(columns) - 1 else ""
+
+                        f.write(f"    [{col_name}] {type_str}{identity_str}{null_str}{comma}\n")
+
+                    f.write(");\nGO\n\n")
+
+                    cursor.execute(f"""
+                        SELECT 
+                            i.name,
+                            STRING_AGG(c.name, ', ') 
+                                WITHIN GROUP (ORDER BY ic.key_ordinal)
+                        FROM sys.indexes i
+                        INNER JOIN sys.index_columns ic 
+                            ON i.object_id = ic.object_id 
+                            AND i.index_id = ic.index_id
+                        INNER JOIN sys.columns c 
+                            ON ic.object_id = c.object_id 
+                            AND ic.column_id = c.column_id
+                        WHERE i.object_id = OBJECT_ID('[{schema}].[{table}]')
+                        AND i.is_primary_key = 1
+                        GROUP BY i.name
+                    """)
+
+                    pk = cursor.fetchone()
+                    if pk:
+                        pk_name, cols = pk
+                        f.write(
+                            f"ALTER TABLE [{schema}].[{table}]\n"
+                            f"    ADD CONSTRAINT [{pk_name}] PRIMARY KEY CLUSTERED ({cols});\nGO\n\n"
+                        )
+
             return True
-            
+        
         except Exception as e:
             self.logger.error(f"Error en _generate_schema: {e}")
             return False
-    
-    def _generate_table_ddl(self, db_config: DatabaseConfig, database_name: str, 
-                            schema: str, table_name: str, script_file: Path) -> bool:
-        """Genera el DDL de una tabla específica"""
-        
+
+
+    # -------------------------------------------------------------------------
+    # GENERAR DATOS
+    # -------------------------------------------------------------------------
+
+    def _generate_data(self, conn, database_name: str, script_file: Path) -> bool:
+        """Genera datos detallados + logs."""
         try:
-            # Query para obtener definición de columnas
-            ddl_query = f"""
-            SET NOCOUNT ON;
-            
-            DECLARE @TableName NVARCHAR(128) = N'{table_name}';
-            DECLARE @SchemaName NVARCHAR(128) = N'{schema}';
-            DECLARE @SQL NVARCHAR(MAX) = '';
-            
-            -- DROP TABLE si existe
-            PRINT '-- Tabla: [' + @SchemaName + '].[' + @TableName + ']';
-            PRINT 'IF OBJECT_ID(''[' + @SchemaName + '].[' + @TableName + ']'', ''U'') IS NOT NULL';
-            PRINT '    DROP TABLE [' + @SchemaName + '].[' + @TableName + '];';
-            PRINT 'GO';
-            PRINT '';
-            
-            -- CREATE TABLE
-            SET @SQL = 'CREATE TABLE [' + @SchemaName + '].[' + @TableName + '] (';
-            
-            SELECT @SQL = @SQL + CHAR(13) + CHAR(10) + '    [' + c.name + '] ' + 
-                TYPE_NAME(c.user_type_id) +
-                CASE 
-                    WHEN c.max_length = -1 THEN '(MAX)'
-                    WHEN TYPE_NAME(c.user_type_id) IN ('varchar', 'char', 'varbinary', 'binary') 
-                    THEN '(' + CAST(c.max_length AS VARCHAR) + ')'
-                    WHEN TYPE_NAME(c.user_type_id) IN ('nvarchar', 'nchar') 
-                    THEN '(' + CAST(c.max_length/2 AS VARCHAR) + ')'
-                    WHEN TYPE_NAME(c.user_type_id) IN ('decimal', 'numeric')
-                    THEN '(' + CAST(c.precision AS VARCHAR) + ',' + CAST(c.scale AS VARCHAR) + ')'
-                    ELSE ''
-                END +
-                CASE 
-                    WHEN c.is_identity = 1 THEN ' IDENTITY(1,1)' 
-                    ELSE '' 
-                END +
-                CASE 
-                    WHEN c.is_nullable = 0 THEN ' NOT NULL' 
-                    ELSE ' NULL' 
-                END +
-                CASE 
-                    WHEN c.column_id < (SELECT MAX(column_id) FROM sys.columns WHERE object_id = c.object_id) 
-                    THEN ',' 
-                    ELSE '' 
-                END
-            FROM sys.columns c
-            WHERE c.object_id = OBJECT_ID('[' + @SchemaName + '].[' + @TableName + ']')
-            ORDER BY c.column_id;
-            
-            SET @SQL = @SQL + CHAR(13) + CHAR(10) + ');';
-            PRINT @SQL;
-            PRINT 'GO';
-            PRINT '';
-            
-            -- PRIMARY KEY si existe
-            IF EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('[' + @SchemaName + '].[' + @TableName + ']') AND is_primary_key = 1)
-            BEGIN
-                DECLARE @PKName NVARCHAR(128);
-                DECLARE @PKColumns NVARCHAR(MAX) = '';
-                
-                SELECT @PKName = i.name
-                FROM sys.indexes i
-                WHERE i.object_id = OBJECT_ID('[' + @SchemaName + '].[' + @TableName + ']') 
-                    AND i.is_primary_key = 1;
-                
-                SELECT @PKColumns = @PKColumns + 
-                    CASE WHEN @PKColumns = '' THEN '' ELSE ', ' END +
-                    '[' + c.name + ']' +
-                    CASE WHEN ic.is_descending_key = 1 THEN ' DESC' ELSE ' ASC' END
-                FROM sys.index_columns ic
-                INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-                WHERE ic.object_id = OBJECT_ID('[' + @SchemaName + '].[' + @TableName + ']')
-                    AND ic.index_id = (SELECT index_id FROM sys.indexes 
-                                        WHERE object_id = OBJECT_ID('[' + @SchemaName + '].[' + @TableName + ']') 
-                                        AND is_primary_key = 1)
-                ORDER BY ic.key_ordinal;
-                
-                PRINT 'ALTER TABLE [' + @SchemaName + '].[' + @TableName + ']';
-                PRINT '    ADD CONSTRAINT [' + @PKName + '] PRIMARY KEY CLUSTERED (' + @PKColumns + ');';
-                PRINT 'GO';
-                PRINT '';
-            END
-            """
-            
-            cmd = [
-                'sqlcmd',
-                '-S', self._get_server_string(db_config),
-                '-U', db_config.user,
-                '-P', db_config.password,
-                '-d', database_name,
-                '-Q', ddl_query,
-                '-y', '0',
-                '-w', '8000',
-                '-C',
-                '-f', '65001'
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, encoding='utf-8')
-            
-            if result.returncode == 0:
-                with open(script_file, 'a', encoding='utf-8-sig') as f:
-                    f.write(result.stdout)
-                    f.write('\n')
-                return True
-            else:
-                self.logger.error(f"Error: {result.stderr}")
-                return False
-                
-        except Exception as e:
-            self.logger.error(f"Error en _generate_table_ddl: {e}")
-            return False
-    
-    def _generate_data(self, db_config: DatabaseConfig, database_name: str, script_file: Path) -> bool:
-        """Genera los INSERT statements para todas las tablas usando método más confiable"""
-        
-        try:
-            with open(script_file, 'a', encoding='utf-8-sig') as f:
-                f.write("\n-- =============================================\n")
-                f.write("-- DATOS DE LAS TABLAS\n")
-                f.write("-- =============================================\n\n")
-            
-            # Obtener lista de tablas
-            tables_query = """
-            SET NOCOUNT ON;
-            SELECT s.name + '.' + t.name
-            FROM sys.tables t
-            INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-            WHERE t.is_ms_shipped = 0
-            ORDER BY s.name, t.name;
-            """
-            
-            cmd = [
-                'sqlcmd',
-                '-S', self._get_server_string(db_config),
-                '-U', db_config.user,
-                '-P', db_config.password,
-                '-d', database_name,
-                '-Q', tables_query,
-                '-h', '-1',
-                '-W',
-                '-C',
-                '-f', '65001'
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, encoding='utf-8')
-            tables = [t.strip() for t in result.stdout.splitlines() if t.strip()]
-            
+            cursor = conn.cursor()
+
+            with open(script_file, 'a', encoding='utf-8') as f:
+                f.write("\n-- >>>>>> SECTION: DATA\n\n")
+
+            cursor.execute("""
+                SELECT s.name, t.name
+                FROM sys.tables t
+                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                WHERE t.is_ms_shipped = 0
+                ORDER BY s.name, t.name
+            """)
+
+            tables = cursor.fetchall()
             if not tables:
-                self.logger.warning("No hay tablas para exportar datos")
                 return True
-            
-            self.logger.info(f"  Exportando datos de {len(tables)} tablas...")
-            
-            for i, table in enumerate(tables, 1):
-                schema, table_name = table.split('.')
-                self.logger.info(f"    [{i}/{len(tables)}] {schema}.{table_name}...")
-                
-                if not self._generate_table_inserts_safe(db_config, database_name, schema, table_name, script_file):
-                    self.logger.warning(f"No se pudieron exportar datos de {schema}.{table_name}")
-            
-            self.logger.info("  ✓ Datos exportados")
+
+            for i, (schema, table) in enumerate(tables, 1):
+                full = f"{schema}.{table}"
+                self.logger.info(f"[{i}/{len(tables)}] Exportando datos de {full}")
+
+                cursor.execute(f"SELECT COUNT(*) FROM [{schema}].[{table}]")
+                total = cursor.fetchone()[0]
+
+                if total == 0:
+                    continue
+
+                cursor.execute(f"""
+                    SELECT c.name 
+                    FROM sys.columns c
+                    WHERE c.object_id = OBJECT_ID('[{schema}].[{table}]')
+                    ORDER BY c.column_id
+                """)
+                col_names = [c[0] for c in cursor.fetchall()]
+
+                cursor.execute(f"""
+                    SELECT COUNT(*) 
+                    FROM sys.columns 
+                    WHERE object_id = OBJECT_ID('[{schema}].[{table}]')
+                    AND is_identity = 1
+                """)
+                has_identity = cursor.fetchone()[0] > 0
+
+                cursor.execute(f"SELECT * FROM [{schema}].[{table}]")
+                rows = cursor.fetchall()
+
+                successes = 0
+                fails = 0
+
+                with open(script_file, 'a', encoding='utf-8') as f:
+                    f.write(
+                        f"\n-- Datos de {full} ({total} registros)\n"
+                    )
+
+                    if has_identity:
+                        f.write(f"SET IDENTITY_INSERT [{schema}].[{table}] ON;\n")
+
+                    batch_size = 400
+
+                    for batch_start in range(0, len(rows), batch_size):
+                        batch = rows[batch_start:batch_start + batch_size]
+
+                        for row_idx, row in enumerate(batch, start=batch_start + 1):
+                            try:
+                                values = []
+
+                                for v in row:
+                                    if v is None:
+                                        values.append("NULL")
+                                    elif isinstance(v, str):
+                                        values.append("'" + v.replace("'", "''") + "'")
+                                    elif hasattr(v, "isoformat"):
+                                        values.append(f"'{v}'")
+                                    elif isinstance(v, (bytes, bytearray)):
+                                        values.append("0x" + v.hex())
+                                    elif isinstance(v, bool):
+                                        values.append("1" if v else "0")
+                                    else:
+                                        values.append(str(v))
+
+                                cols = ", ".join(f"[{c}]" for c in col_names)
+                                vals = ", ".join(values)
+
+                                f.write(
+                                    f"INSERT INTO [{schema}].[{table}] ({cols}) "
+                                    f"VALUES ({vals});\n"
+                                )
+
+                                successes += 1
+
+                            except Exception as e:
+                                fails += 1
+                                self.logger.warning(
+                                    f"Error en fila {row_idx} de {full}: {repr(e)}"
+                                )
+                                continue
+
+                        f.write("GO\n")
+
+                    if has_identity:
+                        f.write(f"SET IDENTITY_INSERT [{schema}].[{table}] OFF;\n")
+
+                self.logger.info(
+                    f"✔ {full}: {successes}/{total} insertados. Fallidos: {fails}"
+                )
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error en _generate_data: {e}")
             return False
-    
-    def _generate_table_inserts_safe(self, db_config: DatabaseConfig, database_name: str,
-                                    schema: str, table_name: str, script_file: Path) -> bool:
-        """Genera los INSERT usando BCP para mejor manejo de caracteres especiales"""
-        
+
+
+    # -------------------------------------------------------------------------
+    # DEFAULTS
+    # -------------------------------------------------------------------------
+
+    def _generate_defaults(self, conn, script_file: Path):
         try:
-            # Primero verificar si la tabla tiene datos
-            count_query = f"SET NOCOUNT ON; SELECT COUNT(*) FROM [{schema}].[{table_name}];"
-            
-            cmd_count = [
-                'sqlcmd',
-                '-S', self._get_server_string(db_config),
-                '-U', db_config.user,
-                '-P', db_config.password,
-                '-d', database_name,
-                '-Q', count_query,
-                '-h', '-1',
-                '-W',
-                '-C',
-                '-f', '65001'
-            ]
-            
-            result = subprocess.run(cmd_count, capture_output=True, text=True, timeout=30, encoding='utf-8')
-            count = int(result.stdout.strip()) if result.stdout.strip().isdigit() else 0
-            
-            if count == 0:
-                return True  # No hay datos, continuar
-            
-            self.logger.info(f"      {count} registros encontrados")
-            
-            # Usar BCP para exportar datos en formato compatible
-            temp_file = script_file.parent / f"temp_{schema}_{table_name}.bcp"
-            
-            bcp_cmd = [
-                'bcp',
-                f'[{database_name}].{schema}.{table_name}',
-                'out',
-                str(temp_file),
-                '-S', self._get_server_string(db_config),
-                '-U', db_config.user,
-                '-P', db_config.password,
-                '-c',  # Character mode
-                '-t,',  # Field terminator
-                '-r\\n',  # Row terminator
-                '-C', '65001'  # UTF-8 code page
-            ]
-            
-            # Exportar datos con BCP
-            result = subprocess.run(bcp_cmd, capture_output=True, text=True, timeout=120)
-            
-            if result.returncode != 0:
-                self.logger.warning(f"BCP falló para {schema}.{table_name}: {result.stderr}")
-                # Intentar método alternativo
-                return self._generate_table_inserts_fallback(db_config, database_name, schema, table_name, script_file)
-            
-            # Obtener estructura de columnas
-            columns_query = f"""
-            SET NOCOUNT ON;
-            SELECT c.name, t.name as type_name, c.max_length, c.precision, c.scale, c.is_nullable
-            FROM sys.columns c
-            JOIN sys.types t ON c.user_type_id = t.user_type_id
-            WHERE c.object_id = OBJECT_ID('[{schema}].[{table_name}]')
-            ORDER BY c.column_id;
-            """
-            
-            cmd_cols = [
-                'sqlcmd',
-                '-S', self._get_server_string(db_config),
-                '-U', db_config.user,
-                '-P', db_config.password,
-                '-d', database_name,
-                '-Q', columns_query,
-                '-h', '-1',
-                '-s', '|',
-                '-W',
-                '-C',
-                '-f', '65001'
-            ]
-            
-            result_cols = subprocess.run(cmd_cols, capture_output=True, text=True, timeout=30, encoding='utf-8')
-            columns = []
-            
-            for line in result_cols.stdout.strip().split('\n'):
-                if line and '|' in line:
-                    col_name, col_type, max_len, precision, scale, nullable = line.split('|')
-                    columns.append({
-                        'name': col_name.strip(),
-                        'type': col_type.strip().lower(),
-                        'max_length': int(max_len) if max_len.strip() else 0,
-                        'precision': int(precision) if precision.strip() else 0,
-                        'scale': int(scale) if scale.strip() else 0,
-                        'nullable': nullable.strip() == '1'
-                    })
-            
-            # Leer archivo BCP y generar INSERTs
-            with open(script_file, 'a', encoding='utf-8-sig') as f:
-                f.write(f"\n-- Datos de [{schema}].[{table_name}] ({count} registros)\n")
-                
-                # Check for identity column
-                identity_query = f"""
-                SELECT COUNT(*) 
-                FROM sys.columns 
-                WHERE object_id = OBJECT_ID('[{schema}].[{table_name}]') 
-                AND is_identity = 1;
-                """
-                
-                cmd_identity = [
-                    'sqlcmd',
-                    '-S', self._get_server_string(db_config),
-                    '-U', db_config.user,
-                    '-P', db_config.password,
-                    '-d', database_name,
-                    '-Q', identity_query,
-                    '-h', '-1',
-                    '-W',
-                    '-C'
-                ]
-                
-                result_identity = subprocess.run(cmd_identity, capture_output=True, text=True, timeout=10)
-                has_identity = result_identity.stdout.strip() == '1'
-                
-                if has_identity:
-                    f.write(f"SET IDENTITY_INSERT [{schema}].[{table_name}] ON;\nGO\n")
-                
-                # Generar INSERTs
-                try:
-                    with open(temp_file, 'r', encoding='utf-8', errors='replace') as data_file:
-                        lines = data_file.readlines()
-                        batch_size = 100
-                        
-                        for batch_start in range(0, len(lines), batch_size):
-                            batch = lines[batch_start:batch_start + batch_size]
-                            
-                            for line in batch:
-                                if not line.strip():
-                                    continue
-                                    
-                                values = line.strip().split(',')
-                                formatted_values = []
-                                
-                                for i, value in enumerate(values):
-                                    if i >= len(columns):
-                                        break
-                                        
-                                    col = columns[i]
-                                    
-                                    if value == 'NULL':
-                                        formatted_values.append('NULL')
-                                    elif col['type'] in ('varchar', 'char', 'nvarchar', 'nchar', 'text', 'ntext'):
-                                        # Escapar comillas simples
-                                        escaped_value = value.replace("'", "''")
-                                        formatted_values.append(f"'{escaped_value}'")
-                                    elif col['type'] in ('datetime', 'date', 'datetime2', 'smalldatetime'):
-                                        formatted_values.append(f"'{value}'")
-                                    elif col['type'] == 'bit':
-                                        formatted_values.append('1' if value == 'True' or value == '1' else '0')
-                                    else:
-                                        formatted_values.append(value)
-                                
-                                # Construir INSERT
-                                col_names = ', '.join([f"[{col['name']}]" for col in columns[:len(values)]])
-                                val_str = ', '.join(formatted_values)
-                                
-                                f.write(f"INSERT INTO [{schema}].[{table_name}] ({col_names}) VALUES ({val_str});\n")
-                            
-                            f.write("GO\n")
-                
-                except Exception as e:
-                    self.logger.warning(f"Error procesando datos de {schema}.{table_name}: {e}")
-                
-                if has_identity:
-                    f.write(f"SET IDENTITY_INSERT [{schema}].[{table_name}] OFF;\nGO\n")
-                
-                f.write("\n")
-            
-            # Limpiar archivo temporal
-            if temp_file.exists():
-                temp_file.unlink()
-            
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT 
+                    dc.name AS def_name,
+                    s.name AS schema_name,
+                    t.name AS table_name,
+                    c.name AS column_name,
+                    dc.definition
+                FROM sys.default_constraints dc
+                INNER JOIN sys.columns c ON c.default_object_id = dc.object_id
+                INNER JOIN sys.tables t ON t.object_id = c.object_id
+                INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+            """)
+
+            rows = cursor.fetchall()
+            if not rows:
+                return True
+
+            with open(script_file, 'a', encoding='utf-8') as f:
+                f.write("\n-- >>>>>> SECTION: DEFAULTS\n\n")
+
+                for def_name, schema, table, col, definition in rows:
+                    f.write(
+                        f"ALTER TABLE [{schema}].[{table}] "
+                        f"ADD CONSTRAINT [{def_name}] DEFAULT {definition} FOR [{col}];\nGO\n"
+                    )
+
             return True
-                
         except Exception as e:
-            self.logger.warning(f"Error exportando datos de {schema}.{table_name}: {e}")
-            return True  # Continuar aunque falle
-    
-    def _generate_table_inserts_fallback(self, db_config: DatabaseConfig, database_name: str,
-                                        schema: str, table_name: str, script_file: Path) -> bool:
-        """Método alternativo para generar INSERTs cuando BCP falla"""
-        
+            self.logger.error("Error generando DEFAULTs: " + str(e))
+            return False
+
+
+    # -------------------------------------------------------------------------
+    # ÍNDICES
+    # -------------------------------------------------------------------------
+
+    def _generate_indexes(self, conn, script_file: Path):
         try:
-            # Query simplificada para evitar problemas de encoding
-            insert_query = f"""
-            SET NOCOUNT ON;
-            
-            DECLARE @SQL NVARCHAR(MAX) = '';
-            SELECT @SQL = @SQL + 
-                'INSERT INTO [{schema}].[{table_name}] VALUES ('' + ' +
-                STUFF((
-                    SELECT ' + '', '' + ' + 
-                    CASE 
-                        WHEN [{col}] IS NULL THEN ''NULL''
-                        WHEN TYPE_NAME(system_type_id) IN (''varchar'', ''nvarchar'', ''char'', ''nchar'', ''datetime'', ''date'')
-                        THEN ''''''''' + REPLACE(CONVERT(NVARCHAR(MAX), [{col}]), '''''''', '''''''''''') + '''''''''
-                        ELSE 'CAST([' + name + '] AS NVARCHAR(MAX))'
-                    END
-                    FROM sys.columns 
-                    WHERE object_id = OBJECT_ID('[{schema}].[{table_name}]')
-                    ORDER BY column_id
-                    FOR XML PATH(''), TYPE
-                ).value('.', 'NVARCHAR(MAX)'), 1, 9, '') + ');'
-            
-            -- Ejecutar para máximo 1000 filas para evitar timeout
-            DECLARE @RowCount INT;
-            SELECT @RowCount = COUNT(*) FROM [{schema}].[{table_name}];
-            
-            IF @RowCount > 0
-            BEGIN
-                DECLARE @Counter INT = 1;
-                DECLARE @BatchSize INT = 100;
-                
-                WHILE @Counter <= @RowCount AND @Counter <= 1000
-                BEGIN
-                    DECLARE @CurrentSQL NVARCHAR(MAX) = REPLACE(@SQL, 'INSERT', 'SELECT TOP 1 ''INSERT''')
-                    EXEC sp_executesql @CurrentSQL;
-                    SET @Counter = @Counter + 1;
-                END
-            END
-            """
-            
-            cmd = [
-                'sqlcmd',
-                '-S', self._get_server_string(db_config),
-                '-U', db_config.user,
-                '-P', db_config.password,
-                '-d', database_name,
-                '-Q', insert_query,
-                '-y', '0',
-                '-w', '8000',
-                '-C',
-                '-f', '65001'
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, encoding='utf-8')
-            
-            if result.returncode == 0 and result.stdout.strip():
-                with open(script_file, 'a', encoding='utf-8-sig', errors='ignore') as f:
-                    f.write(f"\n-- Datos de [{schema}].[{table_name}] (método alternativo)\n")
-                    
-                    # Verificar si tiene IDENTITY
-                    identity_query = f"""
-                    SELECT COUNT(*) 
-                    FROM sys.columns 
-                    WHERE object_id = OBJECT_ID('[{schema}].[{table_name}]') 
-                    AND is_identity = 1;
-                    """
-                    
-                    cmd_identity = [
-                        'sqlcmd',
-                        '-S', self._get_server_string(db_config),
-                        '-U', db_config.user,
-                        '-P', db_config.password,
-                        '-d', database_name,
-                        '-Q', identity_query,
-                        '-h', '-1',
-                        '-W',
-                        '-C'
-                    ]
-                    
-                    result_identity = subprocess.run(cmd_identity, capture_output=True, text=True, timeout=10)
-                    has_identity = result_identity.stdout.strip() == '1'
-                    
-                    if has_identity:
-                        f.write(f"SET IDENTITY_INSERT [{schema}].[{table_name}] ON;\nGO\n")
-                    
-                    f.write(result.stdout)
-                    
-                    if has_identity:
-                        f.write(f"SET IDENTITY_INSERT [{schema}].[{table_name}] OFF;\nGO\n")
-                    
-                    f.write("\n")
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT 
+                    i.name,
+                    s.name,
+                    t.name,
+                    STRING_AGG(c.name, ', ') 
+                        WITHIN GROUP (ORDER BY ic.key_ordinal)
+                FROM sys.indexes i
+                INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id 
+                                               AND i.index_id = ic.index_id
+                INNER JOIN sys.columns c ON c.object_id = ic.object_id 
+                                         AND c.column_id = ic.column_id
+                INNER JOIN sys.tables t ON t.object_id = i.object_id
+                INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+                WHERE i.is_primary_key = 0
+                AND i.is_unique_constraint = 0
+                AND i.index_id > 0
+                GROUP BY i.name, s.name, t.name
+            """)
+
+            rows = cursor.fetchall()
+            if not rows:
                 return True
-            else:
-                self.logger.warning(f"No se pudieron exportar datos de {schema}.{table_name}")
-                return True
-                
-        except Exception as e:
-            self.logger.warning(f"Error en método alternativo para {schema}.{table_name}: {e}")
+
+            with open(script_file, 'a', encoding='utf-8') as f:
+                f.write("\n-- >>>>>> SECTION: INDEXES\n\n")
+
+                for idx_name, schema, table, cols in rows:
+                    f.write(
+                        f"CREATE INDEX [{idx_name}] ON "
+                        f"[{schema}].[{table}] ({cols});\nGO\n"
+                    )
+
             return True
-    
-    def _get_server_string(self, db_config):
-        """Genera el string de conexión al servidor"""
-        if db_config.port and db_config.port != 1433:
-            return f"{db_config.host},{db_config.port}"
-        return db_config.host
+
+        except Exception as e:
+            self.logger.error("Error generando índices: " + str(e))
+            return False
+
+
+    # -------------------------------------------------------------------------
+    # STORED PROCEDURES
+    # -------------------------------------------------------------------------
+
+    def _generate_stored_procedures(self, conn, script_file: Path):
+        try:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT 
+                    s.name,
+                    p.name,
+                    m.definition
+                FROM sys.procedures p
+                INNER JOIN sys.schemas s ON s.schema_id = p.schema_id
+                INNER JOIN sys.sql_modules m ON m.object_id = p.object_id
+                ORDER BY s.name, p.name
+            """)
+
+            rows = cursor.fetchall()
+            if not rows:
+                return True
+
+            with open(script_file, 'a', encoding='utf-8') as f:
+                f.write("\n-- >>>>>> SECTION: PROCEDURES\n\n")
+
+                for schema, name, definition in rows:
+                    f.write(f"DROP PROCEDURE IF EXISTS [{schema}].[{name}];\nGO\n")
+                    f.write(definition + "\nGO\n\n")
+
+            return True
+        except Exception as e:
+            self.logger.error("Error generando procedimientos: " + str(e))
+            return False
+
+
+    # -------------------------------------------------------------------------
+    # FOREIGN KEYS
+    # -------------------------------------------------------------------------
+
+    def _generate_foreign_keys(self, conn, script_file: Path):
+        try:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT 
+                    fk.name,
+                    s1.name,
+                    t1.name,
+                    c1.name,
+                    s2.name,
+                    t2.name,
+                    c2.name
+                FROM sys.foreign_keys fk
+                INNER JOIN sys.foreign_key_columns fkc
+                    ON fkc.constraint_object_id = fk.object_id
+                INNER JOIN sys.tables t1 
+                    ON t1.object_id = fkc.parent_object_id
+                INNER JOIN sys.schemas s1 
+                    ON s1.schema_id = t1.schema_id
+                INNER JOIN sys.columns c1 
+                    ON c1.column_id = fkc.parent_column_id
+                    AND c1.object_id = t1.object_id
+                INNER JOIN sys.tables t2 
+                    ON t2.object_id = fkc.referenced_object_id
+                INNER JOIN sys.schemas s2 
+                    ON s2.schema_id = t2.schema_id
+                INNER JOIN sys.columns c2 
+                    ON c2.column_id = fkc.referenced_column_id
+                    AND c2.object_id = t2.object_id
+                ORDER BY fk.name, fkc.constraint_column_id
+            """)
+
+            rows = cursor.fetchall()
+            if not rows:
+                return True
+
+            # Reagrupar por constraint
+            fk_map = {}
+            for fk_name, schema, table, col, ref_s, ref_t, ref_c in rows:
+                key = (fk_name, schema, table, ref_s, ref_t)
+                fk_map.setdefault(key, []).append((col, ref_c))
+
+            with open(script_file, 'a', encoding='utf-8') as f:
+                f.write("\n-- >>>>>> SECTION: FOREIGN_KEYS\n\n")
+
+                for (fk_name, schema, table, ref_s, ref_t), cols in fk_map.items():
+                    parent_cols = ", ".join(c for c, _ in cols)
+                    ref_cols = ", ".join(c for _, c in cols)
+
+                    f.write(
+                        f"ALTER TABLE [{schema}].[{table}] WITH CHECK "
+                        f"ADD CONSTRAINT [{fk_name}] FOREIGN KEY ({parent_cols}) "
+                        f"REFERENCES [{ref_s}].[{ref_t}] ({ref_cols});\nGO\n"
+                    )
+
+            return True
+
+        except Exception as e:
+            self.logger.error("Error generando FKs: " + str(e))
+            return False
+
+    def _generate_triggers(self, conn, script_file: Path):
+        """Exporta todos los triggers DML."""
+        try:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT 
+                    s.name AS schema_name,
+                    t.name AS table_name,
+                    tr.name AS trigger_name,
+                    m.definition
+                FROM sys.triggers tr
+                INNER JOIN sys.tables t ON t.object_id = tr.parent_id
+                INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+                INNER JOIN sys.sql_modules m ON m.object_id = tr.object_id
+                WHERE tr.is_ms_shipped = 0
+                AND tr.parent_class = 1
+                ORDER BY s.name, t.name, tr.name
+            """)
+
+            rows = cursor.fetchall()
+            if not rows:
+                return True
+
+            with open(script_file, "a", encoding="utf-8") as f:
+                f.write("\n-- >>>>>> SECTION: TRIGGERS\n\n")
+
+                for schema, table, trigger, definition in rows:
+                    f.write(f"DROP TRIGGER IF EXISTS [{schema}].[{trigger}];\nGO\n")
+                    f.write(definition + "\nGO\n\n")
+
+            return True
+
+        except Exception as e:
+            self.logger.error("Error generando TRIGGERS: " + str(e))
+            return False
+
+    def _generate_users(self, conn, script_file: Path):
+        """Exporta usuarios locales de la base de datos."""
+        try:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT 
+                    name, type_desc
+                FROM sys.database_principals
+                WHERE type IN ('S','U') 
+                AND sid IS NOT NULL
+                AND name NOT IN ('dbo','guest','INFORMATION_SCHEMA','sys')
+            """)
+
+            rows = cursor.fetchall()
+            if not rows:
+                return True
+
+            with open(script_file, "a", encoding="utf-8") as f:
+                f.write("\n-- >>>>>> SECTION: USERS\n\n")
+
+                for name, type_desc in rows:
+                    f.write(
+                        f"CREATE USER [{name}] FOR LOGIN [{name}] WITH DEFAULT_SCHEMA=[dbo];\nGO\n"
+                    )
+
+            return True
+
+        except Exception as e:
+            self.logger.error("Error generando USERS: " + str(e))
+            return False
+
+    def _generate_roles_and_permissions(self, conn, script_file: Path):
+        """Exporta roles y permisos asignados."""
+        try:
+            cursor = conn.cursor()
+
+            # Roles de base de datos
+            cursor.execute("""
+                SELECT name 
+                FROM sys.database_principals
+                WHERE type = 'R' 
+                AND name NOT LIKE 'db_%'
+            """)
+
+            roles = cursor.fetchall()
+
+            # Miembros de roles
+            cursor.execute("""
+                SELECT 
+                    r.name AS role_name,
+                    m.name AS member_name
+                FROM sys.database_role_members rm
+                INNER JOIN sys.database_principals r ON rm.role_principal_id = r.principal_id
+                INNER JOIN sys.database_principals m ON rm.member_principal_id = m.principal_id
+            """)
+
+            memberships = cursor.fetchall()
+
+            if not roles and not memberships:
+                return True
+
+            with open(script_file, "a", encoding="utf-8") as f:
+                f.write("\n-- >>>>>> SECTION: ROLES_AND_PERMISSIONS\n\n")
+
+                # Crear roles
+                for (role,) in roles:
+                    f.write(f"CREATE ROLE [{role}];\nGO\n")
+
+                # Asignar miembros
+                for role, member in memberships:
+                    f.write(
+                        f"EXEC sp_addrolemember N'{role}', N'{member}';\nGO\n"
+                    )
+
+            return True
+
+        except Exception as e:
+            self.logger.error("Error generando ROLES: " + str(e))
+            return False
+
+    def _generate_computed_columns(self, conn, script_file: Path):
+        """Exporta columnas calculadas (computed columns)."""
+        try:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT 
+                    s.name AS schema_name,
+                    t.name AS table_name,
+                    c.name AS column_name,
+                    cc.definition
+                FROM sys.computed_columns cc
+                INNER JOIN sys.columns c ON cc.object_id = c.object_id AND cc.column_id = c.column_id
+                INNER JOIN sys.tables t ON t.object_id = cc.object_id
+                INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+            """)
+
+            rows = cursor.fetchall()
+            if not rows:
+                return True
+
+            with open(script_file, "a", encoding="utf-8") as f:
+                f.write("\n-- >>>>>> SECTION: COMPUTED_COLUMNS\n\n")
+
+                for schema, table, col, definition in rows:
+                    f.write(
+                        f"ALTER TABLE [{schema}].[{table}] "
+                        f"ADD [{col}] AS {definition};\nGO\n"
+                    )
+
+            return True
+
+        except Exception as e:
+            self.logger.error("Error generando COMPUTED COLUMNS: " + str(e))
+            return False
