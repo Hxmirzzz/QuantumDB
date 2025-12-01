@@ -21,8 +21,12 @@ class Config:
     LOG_DIR = BASE_DIR / "Logs"
     CONFIG_FILE = BASE_DIR / "config.json"
 
-    MAX_BACKUP_DAYS = 7  # Dias de retención de backups
-    BACKUP_HOUR = "02:00"  # Hora de ejecución del backup
+    # Directorio para backups anuales
+    ANNUAL_BACKUP_DIR = BACKUP_DIR / "Annual"
+
+    MAX_BACKUP_DAYS = 30  # Días de retención de backups diarios (aumentado a 30)
+    BACKUP_HOUR = "02:00"  # Hora de ejecución del backup diario
+    ANNUAL_BACKUP_DAY = "01-01"  # Día del año para backup anual (MM-DD)
 
     LOG_LEVEL = logging.INFO
     LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -43,14 +47,18 @@ class Config:
             }
         ],
         "backup_settings": {
-            "retention_days": 7,
+            "retention_days": 30,  # Retención de 30 días
             "schedule": "02:00",
-            "compress": True
+            "compress": True,
+            "annual_backup_enabled": True,  # Habilitar backups anuales
+            "annual_backup_date": "01-01",  # Primer día del año
+            "keep_annual_backups": True  # Mantener backups anuales indefinidamente
         }
     }
 
-    @classmethod  # ← CORREGIDO: Agregado @classmethod
+    @classmethod
     def ensure_directories(cls):
         """Crea los directorios necesarios si no existen"""
         cls.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         cls.LOG_DIR.mkdir(parents=True, exist_ok=True)
+        cls.ANNUAL_BACKUP_DIR.mkdir(parents=True, exist_ok=True)

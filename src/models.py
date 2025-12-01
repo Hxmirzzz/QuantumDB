@@ -24,12 +24,16 @@ class DatabaseConfig:
         if not self.type:
             raise ValueError("El tipo de base de datos es obligatorio")
 
+
 @dataclass
 class BackupSettings:
     """Configuración de backups"""
-    retention_days: int = 7
+    retention_days: int = 30  # Cambiado de 7 a 30 días
     schedule: str = "02:00"
     compress: bool = True
+    annual_backup_enabled: bool = True
+    annual_backup_date: str = "01-01"  # MM-DD formato
+    keep_annual_backups: bool = True
 
     def __post_init__(self):
         """Validación después de inicialización"""
@@ -37,6 +41,8 @@ class BackupSettings:
             raise ValueError("retention_days debe ser mayor a 0")
         if not self._validate_time_format(self.schedule):
             raise ValueError("El formato de schedule debe ser HH:MM")
+        if not self._validate_date_format(self.annual_backup_date):
+            raise ValueError("El formato de annual_backup_date debe ser MM-DD")
 
     @staticmethod
     def _validate_time_format(time_str: str) -> bool:
@@ -46,9 +52,22 @@ class BackupSettings:
             if len(parts) != 2:
                 return False
             hours, minutes = int(parts[0]), int(parts[1])
-            return 0 <= hours < 23 and 0 <= minutes < 59
+            return 0 <= hours < 24 and 0 <= minutes < 60
         except (ValueError, AttributeError):
             return False
+    
+    @staticmethod
+    def _validate_date_format(date_str: str) -> bool:
+        """Valida formato de fecha MM-DD"""
+        try:
+            parts = date_str.split("-")
+            if len(parts) != 2:
+                return False
+            month, day = int(parts[0]), int(parts[1])
+            return 1 <= month <= 12 and 1 <= day <= 31
+        except (ValueError, AttributeError):
+            return False
+
 
 @dataclass
 class BackupResult:

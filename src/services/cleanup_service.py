@@ -22,6 +22,7 @@ class CleanupService:
     def cleanup_old_backups(self, backup_dir: Path) -> int:
         """
         Elimina backups más antiguos que retention_days
+        PROTEGE los backups anuales (archivos que empiezan con ANNUAL_)
         
         Args:
             backup_dir: Directorio de backups
@@ -44,6 +45,11 @@ class CleanupService:
             for pattern in patterns:
                 for backup_file in backup_dir.glob(pattern):
                     try:
+                        # PROTEGER backups anuales
+                        if backup_file.name.startswith('ANNUAL_'):
+                            self.logger.debug(f"Protegiendo backup anual: {backup_file.name}")
+                            continue
+                        
                         file_mtime = datetime.fromtimestamp(backup_file.stat().st_mtime)
                         
                         if file_mtime < cutoff_date:
@@ -86,7 +92,9 @@ class CleanupService:
                     'total_files': 0,
                     'total_size_mb': 0,
                     'oldest_backup': None,
-                    'newest_backup': None
+                    'newest_backup': None,
+                    'annual_backups': 0,
+                    'daily_backups': 0
                 }
             
             files = (list(backup_dir.glob('*.sql')) + 
@@ -98,18 +106,26 @@ class CleanupService:
                     'total_files': 0,
                     'total_size_mb': 0,
                     'oldest_backup': None,
-                    'newest_backup': None
+                    'newest_backup': None,
+                    'annual_backups': 0,
+                    'daily_backups': 0
                 }
             
             total_size = sum(f.stat().st_size for f in files)
             oldest = min(files, key=lambda f: f.stat().st_mtime)
             newest = max(files, key=lambda f: f.stat().st_mtime)
             
+            # Contar backups anuales vs diarios
+            annual_count = sum(1 for f in files if f.name.startswith('ANNUAL_'))
+            daily_count = len(files) - annual_count
+            
             return {
                 'total_files': len(files),
                 'total_size_mb': total_size / (1024 * 1024),
                 'oldest_backup': datetime.fromtimestamp(oldest.stat().st_mtime),
-                'newest_backup': datetime.fromtimestamp(newest.stat().st_mtime)
+                'newest_backup': datetime.fromtimestamp(newest.stat().st_mtime),
+                'annual_backups': annual_count,
+                'daily_backups': daily_count
             }
             
         except Exception as e:
@@ -118,5 +134,7 @@ class CleanupService:
                 'total_files': 0,
                 'total_size_mb': 0,
                 'oldest_backup': None,
-                'newest_backup': None
+                'newest_backup': None,
+                'annual_backups': 0,
+                'daily_backups': 0
             }
