@@ -10,7 +10,6 @@ from ..config import Config
 from ..logger import LoggerService
 from ..models import DatabaseConfig, BackupSettings
 
-
 class ConfigRepository:
     """Repositorio para manejar configuración"""
 
@@ -112,9 +111,11 @@ class ConfigRepository:
         settings_dict = self._raw_config.get('backup-settings', {})
         try:
             return BackupSettings(
-                retention_days=settings_dict.get('retention_days', 7),
+                retention_days=settings_dict.get('retention_days', 30),
                 schedule=settings_dict.get('schedule', '02:00'),
-                compress=settings_dict.get('compress', True)
+                compress=settings_dict.get('compress', True),
+                annual_backup_date=settings_dict.get('annual_backup_date', '01-01'),
+                keep_annual_backups=settings_dict.get('keep_annual_backups', True)
             )
         except Exception as e:
             self.logger.error(f"Error al cargar configuración de backups: {str(e)}")

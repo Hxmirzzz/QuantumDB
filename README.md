@@ -1,31 +1,38 @@
-# 🗄️ Sistema de Backup Automático de Bases de Datos
+# 🗄️ DailyBackupDatabase — Automatic SQL Server Backup Engine
 
-Sistema profesional y modular de backup automático para bases de datos MySQL/MariaDB, PostgreSQL y SQL Server, desarrollado con principios SOLID y arquitectura limpia.
+Sistema profesional de backup automático para bases de datos SQL Server, que genera scripts SQL completos con estructura, datos y objetos del esquema.
+Diseñado con principios SOLID, arquitectura limpia y fácil extensión.
 
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+## ✨ Características Principales
 
-## ✨ Características
+✅ Generación de scripts SQL completos (DDL + INSERTS)
 
-- ✅ **Backups automáticos** programables diariamente
-- ✅ **Multi-motor**: MySQL/MariaDB, PostgreSQL y SQL Server
-- ✅ **Credenciales seguras** mediante variables de entorno
-- ✅ **Logs detallados** de todas las operaciones
-- ✅ **Limpieza automática** de backups antiguos
-- ✅ **Reinicio automático** tras caídas del servidor
-- ✅ **Arquitectura SOLID** modular y extensible
-- ✅ **Tests unitarios** incluidos
-- ✅ **Listo para GitHub** sin exponer secretos
+✅ Incluye:
+- Tablas
+- Datos
+- PKs y constraints
+- Defaults
+- Índices
+- Foreign Keys
+- Stored Procedures
+- Triggers
+
+✅ Backups diarios automáticos (retención 30 días)
+✅ Backups anuales permanentes (cada 1 de enero)
+✅ Logs detallados con resumen por tabla/objeto
+✅ Limpieza automática de históricos
+✅ Variables de entorno seguras
+✅ Arquitectura SOLID modular y extensible
+✅ Seguro para GitHub (sin credenciales expuestas)
 
 ## 🏗️ Arquitectura
 
-### Principios SOLID Implementados
-
-1. **Single Responsibility**: Cada clase tiene una única responsabilidad
-2. **Open/Closed**: Extensible sin modificar código existente
-3. **Liskov Substitution**: Estrategias intercambiables
-4. **Interface Segregation**: Interfaces específicas
-5. **Dependency Inversion**: Dependencias mediante abstracciones
+### Principios SOLID Aplicados
+- Single Responsibility
+- Open/Closed
+- Liskov Substitution
+- Interface Segregation
+- Dependency Inversion
 
 ### Estructura del Proyecto
 
@@ -33,169 +40,133 @@ Sistema profesional y modular de backup automático para bases de datos MySQL/Ma
 DailyBackupDatabase/
 │
 ├── src/
-│   ├── __init__.py
-│   ├── config.py                 # Configuración centralizada
-│   ├── logger.py                 # Servicio de logging
-│   ├── models.py                 # Modelos de datos
+│   ├── config.py
+│   ├── logger.py
+│   ├── models.py
 │   │
 │   ├── repositories/
-│   │   ├── __init__.py
-│   │   └── config_repository.py  # Gestión de configuración
-│   │
 │   ├── strategies/
-│   │   ├── __init__.py
-│   │   ├── base_strategy.py      # Estrategia base (abstracta)
-│   │   ├── mysql_strategy.py     # Implementación MySQL
-│   │   ├── postgresql_strategy.py
-│   │   └── sqlserver_strategy.py
-│   │
 │   ├── services/
-│   │   ├── __init__.py
-│   │   ├── backup_service.py     # Orquestación de backups
-│   │   ├── cleanup_service.py    # Limpieza de archivos antiguos
-│   │   └── scheduler_service.py  # Programación de tareas
-│   │
 │   └── factories/
-│       ├── __init__.py
-│       └── strategy_factory.py   # Factory de estrategias
-│
-├── tests/
-│   ├── __init__.py
-│   └── test_backup.py            # Tests unitarios
 │
 ├── scripts/
-│   ├── install_windows_service.bat
-│   └── install_linux_service.sh
-│
-├── main.py                       # Punto de entrada
-├── setup.py                      # Setup para instalación
+├── tests/
+├── main.py
 ├── requirements.txt
 ├── Makefile
-├── .env.example
-├── .gitignore
-├── config.json.example
 └── README.md
 ```
 
-## 📋 Requisitos Previos
+## 🔥 IMPORTANTE — Usar Entorno Virtual (venv)
 
-### Windows
+Este proyecto requiere un entorno virtual para asegurar:
+- ✔ Estabilidad
+- ✔ Reproducibilidad
+- ✔ No conflictos con librerías del sistema
+- ✔ Funcionamiento correcto en servidores y GitHub
+
+### Crear el entorno virtual
+
+**Windows**
 ```bash
-# Instalar Python
-winget install Python.Python.3.12
-
-# Instalar herramientas de BD (según necesites)
-winget install Oracle.MySQL
-winget install PostgreSQL.PostgreSQL
+python -m venv venv
+venv\Scripts\activate
 ```
 
-### Linux (Ubuntu/Debian)
+**Linux/Mac**
 ```bash
-sudo apt update
-sudo apt install python3 python3-pip python3-venv
-sudo apt install mysql-client      # Para MySQL
-sudo apt install postgresql-client # Para PostgreSQL
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### Instalar dependencias
+```bash
+pip install -r requirements.txt
+```
+
+### Guardar dependencias exactas
+```bash
+pip freeze > requirements.txt
+```
+
+### Ignorar venv en Git
+`.gitignore` debe incluir:
+```
+venv/
 ```
 
 ## 🚀 Instalación Rápida
 
 ```bash
-# 1. Clonar repositorio
 git clone https://github.com/Hxmirzzz/DailyBackupDatabase.git
 cd DailyBackupDatabase
 
-# 2. Crear entorno virtual
 python -m venv venv
+venv\Scripts\activate    # Windows
+# source venv/bin/activate   # Linux/Mac
 
-# Windows
-venv\Scripts\activate
-
-# Linux/Mac
-source venv/bin/activate
-
-# 3. Instalar dependencias
 pip install -r requirements.txt
 
-# 4. Inicializar configuración
 python main.py --init
-
-# 5. Configurar credenciales
 cp .env.example .env
-# Editar .env con tus credenciales
-
-# 6. Configurar bases de datos
-# Editar config.json con tu configuración
 ```
 
 ## ⚙️ Configuración
 
-### 1. Archivo `.env` (Credenciales)
-
-```bash
-# MySQL/MariaDB
-DB_USER=backup_user
-DB_PASSWORD=tu_password_seguro
-
-# PostgreSQL
-PG_USER=postgres_user
-PG_PASSWORD=otro_password
-
-# SQL Server
-MSSQL_USER=sa
-MSSQL_PASSWORD=password_sqlserver
+### 1. Archivo .env
+```
+MSSQL_USER=tu_usuario
+MSSQL_PASSWORD=tu_password
 ```
 
-### 2. Archivo `config.json` (Bases de Datos)
-
+### 2. Archivo config.json
 ```json
 {
   "databases": [
     {
-      "name": "mi_base_datos",
-      "type": "mysql",
+      "name": "MiBase",
+      "type": "sqlserver",
       "host": "localhost",
-      "port": 3306,
-      "user": "${DB_USER}",
-      "password": "${DB_PASSWORD}",
-      "enabled": true
-    },
-    {
-      "name": "otra_base",
-      "type": "postgresql",
-      "host": "localhost",
-      "port": 5432,
-      "user": "${PG_USER}",
-      "password": "${PG_PASSWORD}",
+      "port": 1433,
+      "user": "${MSSQL_USER}",
+      "password": "${MSSQL_PASSWORD}",
       "enabled": true
     }
   ],
   "backup_settings": {
-    "retention_days": 7,
+    "daily_retention_days": 30,
     "schedule": "02:00",
-    "compress": true
+    "compress": false
   }
 }
 ```
 
 ## 🎯 Uso
 
-### Comandos Básicos
-
+### Modo automático (scheduler)
 ```bash
-# Modo scheduler (automático)
 python main.py
+```
 
-# Ejecutar backup una sola vez
+### Ejecutar un backup manual
+```bash
 python main.py once
+```
 
-# Backup de una BD específica
-python main.py --db mi_base_datos
+### Backup de una DB específica
+```bash
+python main.py --db MiBase
+```
 
-# Ver estadísticas
+### Ver estadísticas
+```bash
 python main.py --stats
+```
 
-# Iniciar con backup inmediato
+### Ejecutar backup inmediato
+```bash
 python main.py --now
+```
 
 # Ver ayuda
 python main.py --help
@@ -332,99 +303,21 @@ python -m pytest tests/ -v
 
 # Con cobertura
 python -m pytest tests/ -v --cov=src --cov-report=html
-
-# Test específico
-python tests/test_backup.py
 ```
 
-## 🔧 Extender el Sistema
+## � Roadmap
 
-### Agregar Soporte para Nueva Base de Datos
-
-```python
-# 1. Crear nueva estrategia en src/strategies/
-from .base_strategy import BackupStrategy
-
-class OracleBackupStrategy(BackupStrategy):
-    def backup(self, db_config, output_file):
-        # Implementar lógica de backup
-        pass
-
-# 2. Registrar en factory
-from src.factories.strategy_factory import BackupStrategyFactory
-from src.strategies.oracle_strategy import OracleBackupStrategy
-
-BackupStrategyFactory.register_strategy('oracle', OracleBackupStrategy)
-```
-
-## 🐛 Troubleshooting
-
-### Error: "comando no encontrado mysqldump/pg_dump"
-```bash
-# Instalar herramientas de cliente
-sudo apt install mysql-client postgresql-client
-```
-
-### Error: "Access denied"
-```bash
-# Verificar credenciales en .env
-# Verificar permisos del usuario en la BD
-```
-
-### Error: "Cannot find config.json"
-```bash
-# Inicializar configuración
-python main.py --init
-```
-
-### Logs no se generan
-```bash
-# Verificar permisos del directorio logs/
-chmod 755 logs/
-```
-
-## 📈 Roadmap
-
-- [ ] Compresión automática de backups (gzip)
-- [ ] Notificaciones por email/Slack
-- [ ] Sincronización con servicios cloud (S3, Azure Blob)
-- [ ] Dashboard web para monitoreo
-- [ ] Soporte para Oracle y MongoDB
-- [ ] Cifrado de backups
-- [ ] Restauración automática
-- [ ] API REST
-
-## 🤝 Contribuciones
-
-Las contribuciones son bienvenidas! Por favor:
-
-1. Fork del proyecto
-2. Crear rama para tu feature (`git checkout -b feature/AmazingFeature`)
-3. Commit de cambios (`git commit -m 'Add: nueva funcionalidad'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abrir Pull Request
-
-## 📄 Licencia
-
-Este proyecto está bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) para detalles.
+- Compresión GZIP
+- Backups cifrados
+- Dashboard Web
+- API REST
+- Exportar VIEWS y FUNCTIONS (opcional)
+- Exportar SEQUENCES (para PostgreSQL)
 
 ## 👤 Autor
 
 **Hamir David Rocha Causaya**
-- GitHub: [Hxmirzzz](https://github.com/Hxmirzzz)
-- LinkedIn: [Hamir David Rocha Causaya](https://www.linkedin.com/in/hamir01/)
+- GitHub: [https://github.com/Hxmirzzz](https://github.com/Hxmirzzz)
+- LinkedIn: [https://www.linkedin.com/in/hamir01/](https://www.linkedin.com/in/hamir01/)
 
-## 🙏 Agradecimientos
-
-- Diseñado con principios SOLID
-- Inspirado en las mejores prácticas de DevOps
-- Arquitectura limpia y mantenible
-
-## 📞 Soporte
-
-Si encuentras algún problema o tienes preguntas:
-- 📧 Contacto: jamir08david@gmail.com
-
----
-
-⭐ Si este proyecto te fue útil, considera darle una estrella en GitHub!
+⭐ Si este proyecto te fue útil, ¡considera darle una estrella en GitHub!

@@ -2,6 +2,7 @@
 Modelos de datos del sistema
 """
 from dataclasses import dataclass
+from multiprocessing import Value
 from typing import Optional
 
 
@@ -28,8 +29,8 @@ class DatabaseConfig:
 @dataclass
 class BackupSettings:
     """Configuración de backups"""
-    retention_days: int = 30  # Cambiado de 7 a 30 días
-    schedule: str = "02:00"
+    retention_days: int = 30
+    schedule: list = None
     compress: bool = True
     annual_backup_enabled: bool = True
     annual_backup_date: str = "01-01"  # MM-DD formato
@@ -39,8 +40,13 @@ class BackupSettings:
         """Validación después de inicialización"""
         if self.retention_days < 1:
             raise ValueError("retention_days debe ser mayor a 0")
-        if not self._validate_time_format(self.schedule):
-            raise ValueError("El formato de schedule debe ser HH:MM")
+        if isinstance(self.schedule, str):
+            self.schedule = [self.schedule]
+        elif self.schedule is None:
+            self.schedule = ["02:00"]
+        for time_str in self.schedule:
+            if not self._validate_time_format(time_str):
+                raise ValueError(f"Formato inválido de horario: {time_str}. Debe ser HH:MM")
         if not self._validate_date_format(self.annual_backup_date):
             raise ValueError("El formato de annual_backup_date debe ser MM-DD")
 

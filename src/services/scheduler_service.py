@@ -34,17 +34,19 @@ class SchedulerService:
         Args:
             run_immediately: Si es True, ejecuta un backup inmediatamente al iniciar
         """
-        schedule_time = self.backup_service.backup_settings.schedule
+        schedules = self.backup_service.backup_settings.schedule
         annual_enabled = self.backup_service.backup_settings.annual_backup_enabled
         annual_date = self.backup_service.backup_settings.annual_backup_date
         
-        # Programar tarea diaria
-        schedule.every().day.at(schedule_time).do(self._run_daily_backup_job)
+        for schedule_time in schedules:
+            schedule.every().day.at(schedule_time).do(self._run_daily_backup_job)
         
         self.logger.info("=" * 70)
         self.logger.info("SERVICIO DE BACKUP AUTOMÁTICO INICIADO")
         self.logger.info("=" * 70)
-        self.logger.info(f"Backup diario: A las {schedule_time}")
+        self.logger.info(f"Backups diarios programados: {len(schedules)}")
+        for time in schedules:
+            self.logger.info(f"  - A las {time}")
         self.logger.info(f"Retención de backups diarios: {self.backup_service.backup_settings.retention_days} días")
         
         if annual_enabled:
